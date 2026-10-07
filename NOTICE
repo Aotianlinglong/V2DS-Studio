@@ -1,0 +1,33 @@
+V2DS Studio (Vocal to Dataset Studio)
+Copyright 2026 V2DS Studio Contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes or depends upon software, data files and binary
+artifacts developed by third parties. Their names, licenses and the exact
+parts used are listed in CREDITS.md; the corresponding license texts are
+shipped in the third_party/ directory (and, for bundled dictionaries, next
+to the data files themselves).
+
+This product includes:
+- Code adapted from Vocal2Midi (https://github.com/Xiantaidu/Vocal2Midi),
+  Copyright Xiantaidu, Apache License 2.0 (see inference/NOTICE.txt).
+- Code adapted from openvpi/audio-slicer (https://github.com/openvpi/audio-slicer),
+  Copyright (c) 2022 Team OpenVPI, MIT License (see third_party/MIT.txt).
+- The gguf utilities from llama.cpp (https://github.com/ggml-org/llama.cpp),
+  Copyright (c) 2023-2026 The ggml authors, MIT License
+  (see third_party/MIT-llama.cpp.txt).
+- An unmodified binary build of maxlabel_cli from MaxLabel
+  (https://github.com/KakaruHayate/MaxLabel), Mozilla Public License 2.0
+  (see third_party/MPL-2.0.txt; source code available at the upstream URL).
+- Microsoft Visual C++ Runtime DLLs, redistributed under Microsoft's
+  Visual C++ Redistributable license terms.
+
+Pretrained model weights (Qwen3-ASR, TIFA, FoxBreatheLabeler) and the
+large native runtimes are NOT distributed inside this repository; they
+remain under their respective upstream licenses as documented in
+CREDITS.md and the README.
+
+All product names, trademarks and brands are property of their respective
+owners; they refer only to the projects/models this software interoperates
+with and do not imply endorsement.
