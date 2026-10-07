@@ -1,0 +1,22 @@
+inference/ —— 第三方代码归属声明
+================================
+
+本目录（含 API/、qwen3asr_dml/、romaji_asr/、device_utils.py）改编自：
+
+  Vocal2Midi  https://github.com/Xiantaidu/Vocal2Midi
+  Copyright Xiantaidu
+  Licensed under the Apache License, Version 2.0
+  许可证全文：本仓库根目录 LICENSE
+
+其中 qwen3asr_dml/gguf/ 子包改编自 llama.cpp 的 gguf 工具：
+
+  llama.cpp   https://github.com/ggml-org/llama.cpp
+  Copyright (c) 2023-2026 The ggml authors
+  Licensed under the MIT License
+  许可证全文：../../third_party/MIT-llama.cpp.txt
+
+本项目对上述代码的修改包括：接入 V2DS Studio 的 ASR 服务/子进程封装、
+歌词流文本归一化策略调整，以及 DirectML 运行时的加载方式。所有修改同样
+在 Apache-2.0 下提供。
+
+运行期所需的 ggml/llama 原生 DLL 不在仓库内，见 README「模型与二进制下载」。
