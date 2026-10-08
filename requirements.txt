@@ -1,0 +1,31 @@
+# V2DS Studio (Vocal to Dataset Studio) 运行依赖
+# Python 3.12（Windows x64）
+
+PyQt5==5.15.11
+numpy==1.26.4
+scipy==1.17.1
+soundfile==0.13.1
+sounddevice==0.5.6
+librosa==0.11.0
+matplotlib==3.11.2
+PyYAML==6.0.3
+tqdm==4.67.3
+requests==2.34.2
+
+# ONNX 推理（呼吸检测 / TIFA 对齐 / Qwen3-ASR encoder）
+# DirectML 版通吃 N/A/核显；无 GPU 可改装 onnxruntime（CPU）
+onnxruntime-directml==1.24.4
+
+# G2P（g2pflow 管道 + 日语 MeCab 分词）
+# 日语使用完整版 UniDic（与 TIFA 一致）；装完后需执行一次 python -m unidic download 拉取词典
+g2pflow==0.3.1
+fugashi==1.5.2
+unidic>=1.1.0
+
+# VST3 插件面板（可选，音频降噪/去口水音等）
+pedalboard==0.9.25
+dawdreamer==0.9.0
+
+# ASR 工具（qwen3asr_dml 的 gguf 子包按需使用）
+sentencepiece
+pydub

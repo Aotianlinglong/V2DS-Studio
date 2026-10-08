@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 本地运行配置（含本机绝对路径，按软件首次运行自动生成）
+config.json
+
+# 用户数据/工程文件（含个人数据集与标注，切勿提交）
+*.labproj
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+
+# 密钥与凭据
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+credentials*
+*secret*
+
+# VST 面板本地状态
+.vst_states/
+
+# 需自行下载放置的模型与运行时（见 README「模型与二进制下载」）
+/models/
+/asr_model/
+/python/
+inference/qwen3asr_dml/bin/
+fx/bin/
+# 第三方二进制（MPL-2.0 CLI + VC++ 运行时，见 Release binaries_pack）
+/g2p/*.dll
+/g2p/*.exe
+
+# 发行打包暂存目录
+/release-staging/
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.user
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
