@@ -2558,22 +2558,24 @@ class MainWindow(QMainWindow):
 
         class _TifaRun(QThread):
             prog = pyqtSignal(int)
-            done = pyqtSignal(object)     # (results, total)
+            done = pyqtSignal(object)     # (results, total, failures)
             err = pyqtSignal(str)
             def run(self):
                 import tempfile, shutil
                 from v2ds.align import tifa_align
-                results = []
+                results, failures = [], []
                 tmp = None
                 try:
                     tmp = tempfile.mkdtemp(prefix="tifa_run_")
                     for i, m in enumerate(self.marks):
                         mc = m.copy()      # 副本计算，避免后台线程改主线程对象
-                        ok, chosen = tifa_align.compute_for_mark(mc, str(self.path), tmp)
+                        ok, chosen, why = tifa_align.compute_for_mark(mc, str(self.path), tmp)
                         if ok == 0:
                             results.append((i, chosen))
+                        elif ok == 1:
+                            failures.append((i, why))   # 对齐失败（如中文 OOV），上报 UI
                         self.prog.emit(i + 1)
-                    self.done.emit((results, len(self.marks)))
+                    self.done.emit((results, len(self.marks), failures))
                 except Exception as e:
                     self.err.emit(str(e))
                 finally:
@@ -2608,8 +2610,38 @@ class MainWindow(QMainWindow):
             m.pfml = m.slots.to_uid_pfml(pos)
         return written
 
+    def _show_batch_failures(self, base_msg: str, title: str, head: str,
+                             failures: list, target: list):
+        """批量对齐/检测的失败标记 → 告警弹窗（正文列标记，完整原因放详情）。
+
+        failures: [(target 下标, 原因)]；target: 本次处理的标记列表（与下标对应）。
+        标记序号按当前 wav 全部标记的 1 起序号显示，便于在标记表定位。
+        """
+        all_marks = self.project.marks_of(self.current_wav)
+        lines = []
+        for i, why in failures:
+            mk = target[i] if 0 <= i < len(target) else None
+            if mk is None:
+                continue
+            no = next((k + 1 for k, mm in enumerate(all_marks) if mm is mk), i + 1)
+            snippet = (mk.text or "").strip()
+            if len(snippet) > 24:
+                snippet = snippet[:24] + "…"
+            lines.append(f"标记 #{no}「{snippet}」 {mk.start:.3f}~{mk.end:.3f}s\n    {why}")
+        preview = lines[:12]
+        msg = (f"{base_msg}\n\n{head.format(n=len(lines))}\n"
+               + "\n".join(f"· {s}" for s in preview))
+        if len(lines) > len(preview):
+            msg += f"\n… 其余 {len(lines) - len(preview)} 个见“详情”"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(title)
+        box.setText(msg)
+        box.setDetailedText("\n".join(lines))
+        box.exec_()
+
     def _on_tifa_done(self, payload):
-        results, total = payload
+        results, total, failures = payload
         marks = self.project.marks_of(self.current_wav)
         target = getattr(self, "_tifa_target", None)
         if not target:
@@ -2628,8 +2660,18 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
         self._refresh_mark_table()
         self._sync_text_edit()
-        self.statusBar().showMessage(f"TIFA 自动选音完成：{total} 段，写入 {written} 处读音")
-        QMessageBox.information(self, "完成", f"TIFA 自动选音完成，共 {total} 段，写入 {written} 处读音。")
+        base = f"TIFA 自动选音完成，共 {total} 段，写入 {written} 处读音。"
+        if failures:
+            self.statusBar().showMessage(
+                f"TIFA 自动选音完成：{total} 段，写入 {written} 处读音，"
+                f"{len(failures)} 段对齐失败")
+            self._show_batch_failures(
+                base, "TIFA 自动选音完成（有对齐失败）",
+                "其中 {n} 个标记对齐失败（未写入读音）：", failures, target)
+        else:
+            self.statusBar().showMessage(
+                f"TIFA 自动选音完成：{total} 段，写入 {written} 处读音")
+            QMessageBox.information(self, "完成", base)
 
     def _on_tifa_failed(self, msg):
         if self._tifa_progress:
@@ -2678,24 +2720,26 @@ class MainWindow(QMainWindow):
 
         class _BreathRun(QThread):
             prog = pyqtSignal(int)
-            done = pyqtSignal(object)     # (results, total)
+            done = pyqtSignal(object)     # (results, total, failures)
             err = pyqtSignal(str)
             def run(self):
                 import tempfile, shutil
                 from v2ds.align import tifa_align as ta
-                results = []
+                results, failures = [], []
                 tmp = None
                 try:
                     tmp = tempfile.mkdtemp(prefix="breath_run_")
                     for i, m in enumerate(self.marks):
                         mc = m.copy()
-                        ok, inserts = ta.breath_for_mark(mc, str(self.path), tmp)
+                        ok, inserts, why = ta.breath_for_mark(mc, str(self.path), tmp)
                         if ok == 0:
                             results.append((i, inserts))
+                        elif ok == 1:
+                            failures.append((i, why))   # 对齐/FBL 失败，上报 UI
                         self.prog.emit(i + 1)
                     if tmp:
                         shutil.rmtree(tmp, ignore_errors=True)
-                    self.done.emit((results, len(self.marks)))
+                    self.done.emit((results, len(self.marks), failures))
                 except Exception as e:
                     if tmp:
                         shutil.rmtree(tmp, ignore_errors=True)
@@ -2740,7 +2784,7 @@ class MainWindow(QMainWindow):
         return written
 
     def _on_breath_done(self, payload):
-        results, total = payload
+        results, total, failures = payload
         marks = self.project.marks_of(self.current_wav)
         target = getattr(self, "_breath_target", None) or marks
         self._push_undo()
@@ -2757,9 +2801,18 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
         self._refresh_mark_table()
         self._sync_text_edit()
-        self.statusBar().showMessage(f"呼吸检测完成：{total} 段，插入 {written} 处 AP/EP")
-        QMessageBox.information(self, "完成",
-                                f"呼吸检测完成，共 {total} 段，插入 {written} 处 AP/EP。")
+        base = f"呼吸检测完成，共 {total} 段，插入 {written} 处 AP/EP。"
+        if failures:
+            self.statusBar().showMessage(
+                f"呼吸检测完成：{total} 段，插入 {written} 处 AP/EP，"
+                f"{len(failures)} 段失败")
+            self._show_batch_failures(
+                base, "呼吸检测完成（有失败片段）",
+                "其中 {n} 个标记处理失败（对齐或 FBL 检测）：", failures, target)
+        else:
+            self.statusBar().showMessage(
+                f"呼吸检测完成：{total} 段，插入 {written} 处 AP/EP")
+            QMessageBox.information(self, "完成", base)
 
     def _on_breath_failed(self, msg):
         if self._breath_progress:
@@ -2840,7 +2893,7 @@ class MainWindow(QMainWindow):
         class _ExportRun(QThread):
             prog = pyqtSignal(int)
             lbl = pyqtSignal(str)
-            done = pyqtSignal(object)   # (exported, skipped, tg_failed)
+            done = pyqtSignal(object)   # (exported, failures, out_dir)
             err = pyqtSignal(str)
             def run(self):
                 try:
@@ -2864,20 +2917,38 @@ class MainWindow(QMainWindow):
         th.start()
 
     def _on_export_done(self, result):
-        exported, tg_failed, out_dir = result
+        exported, failures, out_dir = result
         self._export_progress.close()
-        msg = f"导出完成：{exported} 个切片（wav + pfml + TextGrid + statistics）到：\n{out_dir}"
-        if tg_failed:
-            msg += f"\n{tg_failed} 个 TextGrid 对齐失败（wav/pfml 已导出）"
-        QMessageBox.information(self, "完成", msg)
+        base_msg = (f"导出完成：{exported} 个切片"
+                    f"（wav + pfml + TextGrid + statistics）到：\n{out_dir}")
+        if not failures:
+            QMessageBox.information(self, "完成", base_msg)
+            return
+        # 有对齐失败：列出失败的标记（来源 wav + 时间范围 + 切片名 + 原因），
+        # 完整原因放"详情"，避免弹窗过长
+        preview, limit = failures[:12], 12
+        msg = (f"{base_msg}\n\n其中 {len(failures)} 个标记 TextGrid 对齐失败"
+               f"（wav/pfml 已导出）：\n"
+               + "\n".join(f"· {s}" for s, _why in preview))
+        if len(failures) > limit:
+            msg += f"\n… 其余 {len(failures) - limit} 个见“详情”"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("导出完成（有对齐失败）")
+        box.setText(msg)
+        box.setDetailedText("\n".join(f"{s}\n    {why}" for s, why in failures))
+        box.exec_()
 
     def _on_export_err(self, msg):
         self._export_progress.close()
         QMessageBox.critical(self, "导出失败", msg)
 
     def _do_export(self, out_dir: str, dataset_lang: str, split: bool,
-                   prog, progdlg, lbl=None, total_count=0) -> tuple[int, int, int, str]:
+                   prog, progdlg, lbl=None, total_count=0) -> tuple:
         """导出：wav + pfml → TIFA 对齐生成 TextGrid + statistics。
+
+        返回 (exported, failures, out_dir)：failures 为对齐失败标记的说明列表
+        （来源 wav + 时间范围 + 切片名 + 原因），供完成弹窗逐条展示。
 
         目录结构：
           不分开：<out>/wav/{name}.wav,.pfml  +  <out>/TextGrid/{name}.TextGrid
@@ -2897,7 +2968,8 @@ class MainWindow(QMainWindow):
                 all_langs.add(m.lang or "zh")
         other_langs = sorted(all_langs - {dataset_lang})
 
-        exported = tg_failed = done = 0
+        exported = done = 0
+        failures: list[str] = []   # 对齐失败的标记说明（供完成弹窗展示）
         seq_map = {}   # (stem, lang_folder) -> seq
         # 每个语言文件夹聚合 metrics 和 score_words
         folder_metrics: dict[str, list] = {}
@@ -2913,7 +2985,7 @@ class MainWindow(QMainWindow):
             stem = Path(name).stem
             for m in sorted(marks, key=lambda m: m.start):
                 if progdlg.wasCanceled():
-                    return exported, tg_failed, out_dir
+                    return exported, failures, out_dir
                 lang = m.lang or "zh"
                 s, e = int(m.start * sr), min(len(data), int(m.end * sr))
                 if s >= e:
@@ -2942,7 +3014,9 @@ class MainWindow(QMainWindow):
                     main_lang=dataset_lang,
                 )
                 if not ok:
-                    tg_failed += 1
+                    why = " ".join(str(_err or "对齐失败").split())
+                    failures.append((
+                        f"{name}  {m.start:.3f}~{m.end:.3f}s  （切片 {base}）", why))
                 exported += 1
                 # 聚合 metrics + scores 到语言文件夹
                 fkey = folder_lang or "_root"
@@ -2966,7 +3040,7 @@ class MainWindow(QMainWindow):
                                    folder_scores.get(fkey, []))
         if lbl is not None:
             prog.emit(total_count + 1)
-        return exported, tg_failed, out_dir
+        return exported, failures, out_dir
 
     # ---------------- 设置 ----------------
     def open_settings(self):

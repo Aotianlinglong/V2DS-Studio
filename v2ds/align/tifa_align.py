@@ -321,16 +321,17 @@ def _align(wav_path, text, lang, out_dir,
     return ok, tg, err, extra.get("metrics", {}), extra.get("score_words", [])
 
 
-def compute_for_mark(mark, wav_path, out_dir) -> tuple[int, list[dict]]:
+def compute_for_mark(mark, wav_path, out_dir) -> tuple[int, list[dict], str]:
     """对一个标记算「音频判读音」候选 override 列表。
 
     先把 [mark.start, mark.end) 音频切片——每个标记只对齐自己那一段。若不切片，
     单行歌词会被拿去对齐整首歌，音素被大幅拉伸对不上候选 → 无写入且慢。
-    返回 (ok, [chosen...])；ok=0 成功、1 无tifa/失败、2 无多音字。
+    返回 (ok, [chosen...], err)；ok=0 成功、1 对齐失败、2 无多音字。
+    err 仅 ok=1 时非空（如中文 OOV 致对齐失败），供 UI 前置提示试错。
     """
     text = mark.text.strip()
     if not text:
-        return 1, []
+        return 1, [], "标记文本为空"
     lang = mark.lang or "zh"
     # 含语言副标签：传嵌套 scope 的 PFML 文本
     text = scoped_text(mark).strip()
@@ -339,19 +340,19 @@ def compute_for_mark(mark, wav_path, out_dir) -> tuple[int, list[dict]]:
     try:
         clip = out_dir / "mark.wav"
         slice_wav(wav_path, float(mark.start), float(mark.end), clip)
-    except Exception:
-        return 1, []
+    except Exception as ex:
+        return 1, [], f"切片失败：{ex}"
     ok, tg, err, _metrics, _sw = _align(clip, text, lang, out_dir)
     if not ok:
-        return 1, []
+        return 1, [], (err or "TIFA 对齐失败")
     words = words_with_phones(tg)
     chosen = chosen_readings(mark, words)
-    return (0, chosen) if chosen else (2, [])
+    return (0, chosen, "") if chosen else (2, [], "")
 
 
 # ---------------- 呼吸检测（FBL ONNX + TIFA 词边界） ----------------
 
-def breath_for_mark(mark, wav_path, out_dir) -> tuple[int, list[dict]]:
+def breath_for_mark(mark, wav_path, out_dir) -> tuple[int, list[dict], str]:
     """对一个标记做呼吸检测（FBL ONNX 版，弃用 cpp breathe）。
 
     流程（与旧 FBL Python 流水线等价）：
@@ -360,14 +361,15 @@ def breath_for_mark(mark, wav_path, out_dir) -> tuple[int, list[dict]]:
       → 4. 只保留中心落在词间空隙的段（等价旧流程"SP 中找 AP"）→ 映射到字符位置。
       尾部段（中心在最后词结束之后）→ EP。
 
-    返回 (ok, [{b, sym, side}...])；ok=0 成功、1 无模型/失败、2 无检出。
+    返回 (ok, [{b, sym, side}...], err)；ok=0 成功、1 失败、2 无检出。
+    err 仅 ok=1 时非空，供 UI 前置提示试错。
     """
     from v2ds.align import tifa_onnx_runner as onnxr
     if not onnxr.fbl_available():
-        return 1, []
+        return 1, [], "未找到呼吸检测模型（models/fbl/model.onnx）"
     text = mark.text.strip()
     if not text:
-        return 1, []
+        return 1, [], "标记文本为空"
     lang = mark.lang or "zh"
     text = scoped_text(mark).strip()
     out_dir = Path(out_dir)
@@ -375,20 +377,20 @@ def breath_for_mark(mark, wav_path, out_dir) -> tuple[int, list[dict]]:
     try:
         clip = out_dir / "breath_mark.wav"
         slice_wav(wav_path, float(mark.start), float(mark.end), clip)
-    except Exception:
-        return 1, []
+    except Exception as ex:
+        return 1, [], f"切片失败：{ex}"
     pass1 = out_dir / "pass1"
-    ok, tg, _err, _m, _sw = _align(clip, text, lang, pass1)
+    ok, tg, err, _m, _sw = _align(clip, text, lang, pass1)
     if not ok:
-        return 1, []
+        return 1, [], (err or "TIFA 对齐失败")
     try:
         segments = onnxr.fbl_infer(clip)
-    except Exception:
-        return 1, []
+    except Exception as ex:
+        return 1, [], f"FBL 推理失败：{ex}"
     if not segments:
-        return 2, []
+        return 2, [], ""
     inserts = _breath_inserts_fbl(mark, tg, segments)
-    return (0, inserts) if inserts else (2, [])
+    return (0, inserts, "") if inserts else (2, [], "")
 
 
 def _breath_inserts_fbl(mark, pass1_tg_path, ap_segments) -> list[dict]:
@@ -448,7 +450,7 @@ if __name__ == "__main__":
         from v2ds.core.project import Mark
         mk = Mark(0.0, 0.0, txt, lang)  # 仅用其 text/slots
         out = ROOT_DIR / "_tifa_test"
-        ok, chosen = compute_for_mark(mk, wav, out)
-        print("ok:", ok)
+        ok, chosen, _err = compute_for_mark(mk, wav, out)
+        print("ok:", ok, _err)
         for c in chosen:
             print(c)
