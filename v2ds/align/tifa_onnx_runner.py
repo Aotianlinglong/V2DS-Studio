@@ -852,19 +852,57 @@ def tifa_align_audio(wav_path, pfml_text: str, lang: str,
             "duration": duration, "metrics": metrics, "score_words": score_words}
 
 
+def _fill_gaps(items, fill: str, xmin: float, xmax: float) -> list:
+    """把 (t0,t1,label) 区间补齐为连续覆盖 [xmin,xmax]：空隙用 fill 占位。
+
+    TIFA 只写解码到的音素，区间之间/首尾的静音空隙不由它产出——参考实现
+    （textgrid 库 IntervalTier.write 的 _fillInTheGaps(null='')）会在写盘时补齐，
+    再由 FoxBreatheLabeler 的 tg_replace_empty2sp.py 把空 mark 改成 SP。这里一次
+    补齐到位。重叠/零宽区间就地裁剪，保证单调连续。
+    """
+    out = []
+    prev = float(xmin)
+    for t0, t1, lab in items:
+        t0, t1 = float(t0), float(t1)
+        if t0 < prev:
+            t0 = prev
+        if t1 <= t0:
+            continue
+        if prev < t0:
+            out.append((prev, t0, fill))
+        out.append((t0, t1, lab))
+        prev = t1
+    if prev < float(xmax):
+        out.append((prev, float(xmax), fill))
+    return out
+
+
 def _write_textgrid(path, words, prons, phones, duration: float):
-    """写 ooTextFile TextGrid（texts/words/phones 三层），与 cpp 输出同构。"""
+    """写 ooTextFile TextGrid（texts/words/phones 三层），与 cpp 输出同构。
+
+    phones / words（发音）层的静音空隙重填 SP：TIFA 本身不产出 SP，导出前必须
+    自行补齐（等价 tg_replace_empty2sp.py）。texts 层空隙留空（参考实现也只处理
+    phones/words 两层）。
+    """
     def esc(s: str) -> str:
         return s.replace('"', '""')
 
+    # 各层区间可能略微超出音频时长：统一 xmax 取最大边界，避免末尾被截断
+    xmax = float(duration)
+    for items in (words, prons, phones):
+        for _t0, t1, _lab in items:
+            if float(t1) > xmax:
+                xmax = float(t1)
+
     lines = ['File type = "ooTextFile"', 'Object class = "TextGrid"', "",
-             "xmin = 0", f"xmax = {duration:.6f}", "tiers? <exists>", "size = 3", "item []:"]
-    for idx, (name, items) in enumerate(
-            (("texts", words), ("words", prons), ("phones", phones)), 1):
+             "xmin = 0", f"xmax = {xmax:.6f}", "tiers? <exists>", "size = 3", "item []:"]
+    for idx, (name, items, fill) in enumerate(
+            (("texts", words, ""), ("words", prons, "SP"), ("phones", phones, "SP")), 1):
+        filled = _fill_gaps(items, fill, 0.0, xmax)
         lines += [f"    item [{idx}]:", '        class = "IntervalTier"',
                   f'        name = "{name}"', "        xmin = 0",
-                  f"        xmax = {duration:.6f}", f"        intervals: size = {len(items)}"]
-        for i, (t0, t1, lab) in enumerate(items, 1):
+                  f"        xmax = {xmax:.6f}", f"        intervals: size = {len(filled)}"]
+        for i, (t0, t1, lab) in enumerate(filled, 1):
             lines += [f"        intervals [{i}]:", f"            xmin = {t0:.6f}",
                       f"            xmax = {t1:.6f}", f'            text = "{esc(lab)}"']
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
