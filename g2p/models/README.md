@@ -47,6 +47,13 @@ CMUdict 0.7b（Carnegie Mellon University 发音词典），**BSD-2-Clause**。
 
 ## 下载的（不在仓库里）
 
+### `LstmG2p-Eng/`（encoder.onnx / decoder.onnx / char.json / phonemes.json）
+
+英语 LSTM 字形→音素模型（约 4 MB），来自 openvpi/TIFA 发布资产的 `assets/LstmG2p-Eng`。
+英文词命中 `ds_cmudict-07b.txt` 时走词典多音候选；**OOV 词由该模型 beam 推理出读音候选**。
+缺失时英语转换器退化为纯词典模式，OOV 词只能原样透传（候选=原词），与完整 TIFA 不一致。
+随 Release 的 binaries_pack 分发，解压合并到 `g2p/models/` 下。
+
 ### `lid.176.bin` / `lid.176.ftz`
 
 fastText 的语言识别模型。fastText 的**代码**是 MIT，但**模型权重**是

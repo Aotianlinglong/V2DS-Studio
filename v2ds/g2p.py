@@ -69,8 +69,10 @@ def _build_pipeline():
                                             "unidic_dir": _ja_unidic_dir()}},
         {"id": "yue-jyutping", "kwargs": {"dict_path": str(_DICTS / "jyutping_dict.txt")}},
     ]
-    if (_LSTM / "char.json").is_file():
-        # 英文 LSTM 模型就位即启用（OOV 推理）；缺模型时用 cmudict 兜底
+    if all((_LSTM / f).is_file() for f in
+           ("char.json", "phonemes.json", "encoder.onnx", "decoder.onnx")):
+        # 英文 LSTM 模型就位即启用（OOV 走 beam 推理，与完整 TIFA 一致）；
+        # 缺任一文件时用 cmudict 兜底（OOV 词只能 passthrough 原词）
         converters.append({"id": "lstm", "language": "en", "kwargs": {
             "dict_path": str(_DICTS / "ds_cmudict-07b.txt"),
             "model_path": str(_LSTM), "beam_size": 16}})

@@ -38,6 +38,8 @@ fx/bin/
 # 第三方二进制（MPL-2.0 CLI + VC++ 运行时，见 Release binaries_pack）
 /g2p/*.dll
 /g2p/*.exe
+# 英语 LSTM G2P 模型（openvpi/TIFA 资产，随 binaries_pack 分发，约 4MB）
+/g2p/models/LstmG2p-Eng/
 
 # 发行打包暂存目录
 /release-staging/
